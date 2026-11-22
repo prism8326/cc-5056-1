@@ -35,7 +35,10 @@ modules). Any static server works; `serve.mjs` is provided so you don't need one
 |---|---|
 | **Eyedropper** | Sample the screen colour from the input image (linear RGB internally). |
 | **Auto (border)** | Pick the dominant saturated border colour automatically. |
-| **View** | *Input*, *Alpha* (transparency alone), *Corrected colour* (despilled foreground over grey), *Composite*, *Spill / residue*, and *Dark ⇄ Light* side-by-side. |
+| **Backdrop model** | Choose the background estimate: *Unified (original)* — the original single smoothed colour; *Single re-fit* — one colour from the guarded evidence pipeline; *Illumination field* — a shared low-frequency brightness field on a bounded grid; *Regional re-fit* — per-tile re-estimation with the field as prior. |
+| **Draw background sample** | Drag a rectangle over a region you *know* is clean backdrop. The kernel cross-checks it against clean evidence, down-weights it if contaminated, and anchors the estimate there if clean. Deleting a sample re-fits only the region it supported; **Undo delete** restores it. |
+| **View** | *Input*, *Alpha* (transparency alone), *Corrected colour* (despilled foreground over grey), *Composite*, *Spill / residue*, *Backdrop field* (the actual estimated background the kernel subtracts), *Confidence* (where that estimate is supported by evidence vs extrapolated), and *Dark ⇄ Light* side-by-side. |
+| **Video sequence** | Load the synthetic walk sequence and step/play frames. With a temporal adoption rate > 0 the background estimate is carried across frames; where the subject covers a declared sample, adoption collapses so the subject is not learned as screen. |
 | **New background** | Dark `[12,14,18]`, Light `[238,240,245]`, a checkerboard transparency cue, or any custom colour. |
 | **Repair brush** | *Protect* forces foreground, *Force key* forces transparent, *Erase* clears marks. Overrides are adjudicated against the local key model and reported in Diagnostics. |
 | **Parameters** | Every slider is bound to a real kernel parameter (grouped by stage). Moving one re-runs the key. |
@@ -87,9 +90,34 @@ the foreground colour, gated by how much off-axis hue the object genuinely carri
 
 ## Pipeline (stages in `src/keyer.js`)
 
-1. **Screen model** — a confidence-weighted, spatially smoothed estimate of the
-   local screen colour `B` (normalized convolution), so brightness varies across
-   the frame and under shadows.
+1. **Screen model** — the local background colour `B(x)`. Four modes, all
+   estimating the same quantity:
+   - *Unified (original)* — confidence-weighted, spatially smoothed screen
+     colour shared across the frame (normalized convolution).
+   - *Single re-fit* — one global colour from the guarded evidence pipeline.
+   - *Illumination field* — brightness `g(x)` on a bounded bilinear grid
+     (≤ 12×10 nodes, fitted in log space so multiplicative shading is
+     low-frequency), one shared chroma ratio for the whole screen.
+   - *Regional re-fit* — the frame is partitioned into tiles; each tile
+     re-estimates `(w, p, q)` from local evidence with the field as prior.
+   The non-uniform modes share the machinery in `src/screenfield.js`:
+   - **Absorption guard** — only pixels whose chroma *direction* matches the
+     screen (`q/w ≈ 0`) build the background model. Shading scales a screen
+     pixel but never rotates its hue, so genuine screen survives at any
+     brightness while a same-hue foreground object contributes nothing. A
+     border-connectivity gate and a robust (IRLS) refit add further
+     protection. The model's degrees of freedom are capped, so it cannot
+     grow extra freedom to chase edges.
+   - **Declared samples** — user-marked reliable background regions. Each is
+     diagnosed (screen-like fraction + chroma deviation against the
+     clean-evidence estimate — brightness differences such as shadows are
+     *not* contamination). Clean samples anchor the estimate locally as
+     direct observations; contaminated ones are down-weighted and reported.
+     Deleting a sample re-fits exactly the tiles/nodes it supported.
+   - **Temporal update** — for video, the previous frame's estimate is kept
+     and new evidence is adopted at a configurable rate; where a declared
+     sample stops looking like screen (the subject walked into it), adoption
+     collapses so the subject is not learned as background.
 2. **Initial alpha** — brightness-free distance of each pixel from the screen's
    chroma ray. Screen pixels sit on the ray; real objects leave it.
 3. **Foreground model + projection** — the clean foreground colour `F` is taken
@@ -127,6 +155,24 @@ The `blueProduct` scene is the deliberate hard case: a saturated blue object und
 blue light. Its spill is collinear with — and only ~15% of the magnitude of — its
 own hue, so it is *inseparable* from the product's colour; the evaluator records
 that honestly rather than demanding a removal that would destroy the object.
+
+### Non-uniform backdrop evaluation
+
+```bash
+node tools/evaluate-screenfield.mjs    # or: npm run evaluate:screenfield
+```
+
+A second harness compares the fixed-colour key against the illumination-field and
+regional models **under the same ground truth**, on a shadowed screen (falloff,
+cast shadow bands, a screen-hue foreground panel) and a wrinkled screen. It checks:
+screen-region alpha leak and MAE vs the fixed key, composite error on dark/light,
+edge foreground colour, absorption of the same-hue panel (must stay low), sample
+diagnostics (contaminated region flagged, clean ones pass, cross-check separation),
+strictly local re-fit when a sample is deleted, the field's bounded degrees of
+freedom, and temporal stability on the 8-frame walk sequence (adoption collapse
+while the subject crosses a sample, no subject absorption, lower per-frame jitter
+than independent refits). Artefacts and `screenfield-report.json` land in
+`test-output/`.
 
 ```bash
 node tools/ui-check.mjs    # or: npm run test:ui

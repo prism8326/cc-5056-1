@@ -171,6 +171,111 @@ export const SCENES = {
     },
     compression: { quality: 90 },
   },
+
+  // Strong lighting gradient + two soft cast shadow bands across the screen
+  // (the classic badly-lit cyclorama).  A panel whose albedo is in the
+  // screen's own hue family sits on the right: the background model must not
+  // absorb it, and the comparison against a fixed-colour key must stay honest.
+  shadowScreen: {
+    width: 480, height: 360,
+    screen: { kind: 'green', base: [0.045, 0.36, 0.075], falloff: 0.55, vignette: 0.30, seed: 61 },
+    shadows: [
+      { ax: 40, ay: 30, bx: 210, by: 360, r: 52, strength: 0.5 },
+      { ax: 350, ay: 0, bx: 450, by: 360, r: 64, strength: 0.36 },
+    ],
+    spill: { amount: 0.2 },
+    subject: {
+      sdf(x, y) {
+        let d = sdCircle(x, y, 150, 100, 38);                       // head
+        d = sunion(d, sdRoundRect(x, y, 150, 255, 72, 110, 38), 16); // torso
+        d = sunion(d, sdRoundRect(x, y, 380, 190, 52, 72, 10), 8);   // screen-hue panel
+        d = sunion(d, sdRoundRect(x, y, 285, 300, 42, 34, 8), 6);    // neutral box
+        return d;
+      },
+      color(x, y) {
+        // screen-family green panel: same hue family as the screen, ~17%
+        // darker, hue shifted slightly teal — the absorption-guard case
+        if (x > 322 && y > 110 && y < 272) return [0.038, 0.285, 0.105];
+        if (x > 238 && y > 262) return [0.36, 0.37, 0.40];           // neutral box
+        if (y < 146) return [0.52, 0.30, 0.20];                      // skin
+        const n = 0.5 + 0.05 * Math.sin(x * 0.23) * Math.cos(y * 0.19);
+        return [n * 0.72, n * 0.74, n * 0.78];                       // shirt
+      },
+    },
+    compression: { quality: 85 },
+  },
+
+  // Wrinkled screen: two interfering sinusoidal shading waves at ~35 px
+  // wavelength — higher frequency than the shared illumination field may
+  // follow (bounded DOF), so the partitioned estimate has to do the work.
+  wrinkleScreen: {
+    width: 480, height: 360,
+    screen: {
+      kind: 'green', base: [0.05, 0.33, 0.07], falloff: 0.16, vignette: 0.14, seed: 73,
+      wrinkles: [
+        { amp: 0.13, fx: 0.030, fy: 0.011, phase: 0.7 },
+        { amp: 0.09, fx: 0.008, fy: 0.026, phase: 2.1 },
+      ],
+    },
+    shadows: [],
+    spill: { amount: 0.16 },
+    subject: {
+      sdf(x, y) {
+        let d = sdRoundRect(x, y, 140, 200, 86, 110, 14);
+        d = Math.min(d, -sdCircle(x, y, 140, 200, 40));
+        for (let i = 0; i < 7; i++) {
+          const xx = 270 + i * 26;
+          d = sunion(d, sdCapsule(x, y, xx, 60, xx, 320, 1.8), 1.2);
+        }
+        d = sunion(d, sdRoundRect(x, y, 390, 110, 46, 34, 10), 6);   // teal box
+        return d;
+      },
+      color(x, y) {
+        if (x > 340 && y < 150) return [0.08, 0.30, 0.24];           // teal object
+        if (x > 252) return [0.70, 0.68, 0.64];                      // struts
+        if (Math.hypot(x - 140, y - 200) < 48) return [0.20, 0.22, 0.26];
+        return [0.52, 0.54, 0.58];
+      },
+    },
+    compression: { quality: 88 },
+  },
+};
+
+// Short video sequences for the temporal background update.  The subject
+// walks across the frame and through a declared background sample region;
+// the camera jitters slightly and the exposure drifts, so a per-frame
+// independent refit is visibly less stable than the temporal one.
+export const SEQUENCES = {
+  walk: {
+    frames: 8, width: 480, height: 360,
+    screen: { kind: 'green', base: [0.045, 0.35, 0.075], falloff: 0.40, vignette: 0.26, seed: 91 },
+    shadows: [{ ax: 90, ay: 40, bx: 300, by: 360, r: 58, strength: 0.42 }],
+    spill: { amount: 0.2 },
+    compression: { quality: 86 },
+    // declared reliable background sample; the subject's head crosses it
+    sampleRegion: { x: 215, y: 24, w: 96, h: 64 },
+    camera(t) {
+      return { dx: 1.2 * Math.sin(t * 1.1), dy: 0.8 * Math.cos(t * 0.9), gain: 1 + 0.03 * Math.sin(t * 0.7) };
+    },
+    subjectAt(t) {
+      const cx = 30 + t * 62;   // walks left -> right across the frame
+      return {
+        sdf(x, y) {
+          let d = sdCircle(x, y, cx, 92, 38);
+          d = sunion(d, sdRoundRect(x, y, cx, 248, 74, 116, 40), 16);
+          d = sunion(d, sdCapsule(x, y, cx - 58, 200, cx - 104, 296, 24), 12);
+          d = sunion(d, sdCapsule(x, y, cx + 58, 206, cx + 110, 256, 22), 10);
+          return d;
+        },
+        color(x, y) {
+          if (y < 138) return [0.52, 0.30, 0.20];
+          if (y > 150 && y < 186) return [0.06, 0.32, 0.21];
+          const n = 0.5 + 0.06 * Math.sin(x * 0.21) * Math.cos(y * 0.17);
+          return [n * 0.72, n * 0.74, n * 0.78];
+        },
+      };
+    },
+  },
 };
 
 function screenAt(scene, x, y) {
@@ -185,6 +290,11 @@ function screenAt(scene, x, y) {
   scale *= 1 - s.vignette * (vx * vx * 0.6 + vy * vy * 0.6);
   // gentle low-frequency lamp ripple
   scale *= 1 + 0.035 * Math.sin(x * 0.017 + 0.7) * Math.cos(y * 0.013);
+  // wrinkles: interfering mid-frequency shading waves (creases catch and
+  // lose light locally); still multiplicative on the screen colour
+  for (const wr of s.wrinkles || []) {
+    scale *= 1 + wr.amp * Math.sin(6.28318 * (x * wr.fx + y * wr.fy) + wr.phase + 0.9 * Math.sin(y * 0.05 + x * 0.013));
+  }
   let r = base[0] * scale, g = base[1] * scale, b = base[2] * scale;
 
   // soft cast shadows: also multiplicative on the screen
@@ -204,7 +314,31 @@ function screenAt(scene, x, y) {
 export function buildScene(name, opts = {}) {
   const scene = SCENES[name];
   if (!scene) throw new Error(`unknown scene ${name}`);
+  return renderScene(scene, { ...opts, name });
+}
+
+// One frame of a video sequence: the scene is sampled through the frame's
+// camera offset and exposure gain, so ground truth stays exact per frame.
+export function buildSequenceFrame(seqName, t, opts = {}) {
+  const seq = SEQUENCES[seqName];
+  if (!seq) throw new Error(`unknown sequence ${seqName}`);
+  if (t < 0 || t >= seq.frames) throw new Error(`frame ${t} out of range`);
+  const cam = seq.camera(t);
+  const scene = {
+    width: seq.width, height: seq.height,
+    screen: { ...seq.screen, seed: seq.screen.seed + t * 7 },
+    shadows: seq.shadows, spill: seq.spill, compression: seq.compression,
+    subject: seq.subjectAt(t),
+  };
+  const gt = renderScene(scene, { ...opts, name: `${seqName}-${t}`, cam });
+  gt.sequence = { name: seqName, frame: t, frames: seq.frames, camera: cam, sampleRegion: seq.sampleRegion };
+  return gt;
+}
+
+function renderScene(scene, opts = {}) {
   const W = scene.width, H = scene.height, n = W * H;
+  const name = opts.name || 'scene';
+  const cam = opts.cam || { dx: 0, dy: 0, gain: 1 };
   const rnd = mulberry32((scene.screen.seed || 1) + (opts.seedOffset || 0));
   const noise = opts.noise ?? 0.012;       // gaussian in linear light, multiplicative
   const edgePx = opts.edgePx ?? 1.4;        // anti-alias ramp in pixels
@@ -218,13 +352,15 @@ export function buildScene(name, opts = {}) {
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const i = y * W + x;
-      const d = scene.subject.sdf(x + 0.5, y + 0.5);
+      // scene coordinates seen through this frame's camera
+      const sx = x + 0.5 + cam.dx, sy = y + 0.5 + cam.dy;
+      const d = scene.subject.sdf(sx, sy);
       // coverage from SDF: exact sub-pixel coverage, not a binary mask
       const a = smooth(-edgePx * 0.5, edgePx * 0.5, d);
       alpha[i] = a;
-      const col = scene.subject.color(x + 0.5, y + 0.5);
+      const col = scene.subject.color(sx, sy);
       fgCleanL[i * 3] = col[0]; fgCleanL[i * 3 + 1] = col[1]; fgCleanL[i * 3 + 2] = col[2];
-      const scr = screenAt(scene, x + 0.5, y + 0.5);
+      const scr = screenAt(scene, sx, sy);
       // additive neutral ambient bounce onto the screen (real sets have it)
       const amb = 0.006;
       const sr = scr[0] + amb, sg = scr[1] + amb, sb = scr[2] + amb;
@@ -252,7 +388,7 @@ export function buildScene(name, opts = {}) {
 
       for (let c = 0; c < 3; c++) {
         const m = a * fgL[i * 3 + c] + (1 - a) * [sr, sg, sb][c];
-        mixedL[i * 3 + c] = m;
+        mixedL[i * 3 + c] = m * cam.gain;
       }
     }
   }

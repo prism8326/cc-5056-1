@@ -248,6 +248,120 @@ async function main() {
     }
     await page.screenshot({ path: path.join(OUT, 'ui-08-despill-scene.png') });
 
+    // --- non-uniform backdrop modelling -----------------------------------
+    // Restore a sane threshold and reload the presenter.
+    await page.evaluate(() => {
+      const rng = document.querySelector('[data-param="alphaFloor"] input');
+      rng.value = '0.04';
+      rng.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    seq = await seqOf(page);
+    await page.evaluate(() => window.__keyStudio.loadScene('presenter'));
+    await waitForNewKernel(page, seq + 1);
+
+    // Switch to the illumination-field model — the kernel must actually run it.
+    seq = await seqOf(page);
+    await page.click('#modeSeg [data-mode="field"]');
+    await waitForNewKernel(page, seq + 1);
+    const modeStats = await page.evaluate(() => {
+      const st = window.__keyStudio.state;
+      return { mode: st.result.stats.screenMode, grid: st.result.stats.screenGrid };
+    });
+    add(modeStats.mode === 'field' && modeStats.grid[0] >= 2,
+      'illumination-field model runs from the UI', `mode=${modeStats.mode} grid=${modeStats.grid}`);
+
+    // Backdrop field + confidence views render distinct real pixels.
+    await page.click('#viewSeg [data-view="field"]'); await wait(120);
+    const hField = await grab();
+    await page.screenshot({ path: path.join(OUT, 'ui-09-backdrop-field.png') });
+    await page.click('#viewSeg [data-view="support"]'); await wait(120);
+    const hSupport = await grab();
+    await page.screenshot({ path: path.join(OUT, 'ui-10-confidence.png') });
+    add(hField !== hAlpha && hSupport !== hField && hSupport !== hAlpha,
+      'backdrop field and confidence views render', `${hField},${hSupport}`);
+    await page.click('#viewSeg [data-view="comp"]'); await wait(100);
+
+    // Draw a background sample on a screen-only corner → diagnosed clean.
+    await page.click('#sampleDrawBtn');
+    const cb2 = await page.locator('#cv').boundingBox();
+    seq = await seqOf(page);
+    await page.mouse.move(cb2.x + cb2.width * 0.03, cb2.y + cb2.height * 0.05);
+    await page.mouse.down();
+    await page.mouse.move(cb2.x + cb2.width * 0.16, cb2.y + cb2.height * 0.22, { steps: 5 });
+    await page.mouse.up();
+    await waitForNewKernel(page, seq + 1);
+    const sampleStats = await page.evaluate(() => {
+      const st = window.__keyStudio.state;
+      return { n: st.result.stats.samples.length, d: st.result.screenDiag.map((s) => s.status) };
+    });
+    add(sampleStats.n === 1 && sampleStats.d[0] === 'clean',
+      'drawn background sample is diagnosed clean', JSON.stringify(sampleStats));
+    await page.screenshot({ path: path.join(OUT, 'ui-11-sample-clean.png') });
+
+    // Draw a sample over the subject → contamination diagnosed + warning.
+    seq = await seqOf(page);
+    await page.mouse.move(cb2.x + cb2.width * 0.42, cb2.y + cb2.height * 0.45);
+    await page.mouse.down();
+    await page.mouse.move(cb2.x + cb2.width * 0.62, cb2.y + cb2.height * 0.75, { steps: 5 });
+    await page.mouse.up();
+    await waitForNewKernel(page, seq + 1);
+    const contam = await page.evaluate(() => {
+      const st = window.__keyStudio.state;
+      return {
+        d: st.result.screenDiag.map((s) => s.status),
+        warn: st.result.warnings.some((w) => w.code === 'sample-contaminated'),
+        rows: document.querySelectorAll('#sampleList .sample-row').length,
+      };
+    });
+    add(contam.d[1] === 'contaminated' && contam.warn && contam.rows === 2,
+      'sample over the subject is diagnosed contaminated + warning', JSON.stringify(contam));
+    await page.screenshot({ path: path.join(OUT, 'ui-12-sample-contaminated.png') });
+
+    // Delete the contaminated sample → warning clears; undo restores it.
+    seq = await seqOf(page);
+    await page.click('#sampleList .sample-row.contaminated .del');
+    await waitForNewKernel(page, seq + 1);
+    const afterDel = await page.evaluate(() => {
+      const st = window.__keyStudio.state;
+      return { n: st.result.stats.samples.length, warn: st.result.warnings.some((w) => w.code === 'sample-contaminated') };
+    });
+    add(afterDel.n === 1 && !afterDel.warn,
+      'deleting the contaminated sample re-fits and clears the warning', JSON.stringify(afterDel));
+    seq = await seqOf(page);
+    await page.click('#undoSampleBtn');
+    await waitForNewKernel(page, seq + 1);
+    const afterUndo = await page.evaluate(() => window.__keyStudio.state.result.stats.samples.length);
+    add(afterUndo === 2, 'undo delete restores the sample', `samples=${afterUndo}`);
+    seq = await seqOf(page);
+    await page.click('#sampleList .sample-row.contaminated .del');
+    await waitForNewKernel(page, seq + 1);
+
+    // Video sequence: temporal update engages and frames advance with a
+    // chained background estimate.
+    seq = await seqOf(page);
+    await page.click('#seqGrid [data-seq="walk"]');
+    await waitForNewKernel(page, seq + 1);
+    const seqState = await page.evaluate(() => {
+      const st = window.__keyStudio.state;
+      return {
+        mode: st.params.screenMode, rate: st.params.temporalRate,
+        frame: st.sequence.frame, samples: st.samples.length,
+        adoption: st.result.stats.adoptionMean,
+      };
+    });
+    add(seqState.mode === 'field' && seqState.rate > 0 && seqState.samples >= 1 && seqState.adoption !== null,
+      'sequence loads with temporal update engaged', JSON.stringify(seqState));
+    seq = await seqOf(page);
+    await page.click('#seqNext');
+    await waitForNewKernel(page, seq + 1);
+    const seqState2 = await page.evaluate(() => {
+      const st = window.__keyStudio.state;
+      return { frame: st.sequence.frame, adoption: st.result.stats.adoptionMean, prev: !!st.temporalPrev };
+    });
+    add(seqState2.frame === 1 && seqState2.prev && seqState2.adoption !== null,
+      'frame step chains the background estimate (temporal state)', JSON.stringify(seqState2));
+    await page.screenshot({ path: path.join(OUT, 'ui-13-sequence.png') });
+
     add(consoleErrors.length === 0, 'no browser console errors', consoleErrors.slice(0, 3).join(' | '));
   } catch (e) {
     add(false, 'UI run completed', e.message);

@@ -12,7 +12,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildScene, encodePng, SCENES } from './tools/scenes.js';
+import { buildScene, buildSequenceFrame, encodePng, SCENES, SEQUENCES } from './tools/scenes.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 8080;
@@ -38,6 +38,23 @@ function scenePng(name) {
   return buf;
 }
 
+function sequenceMeta(name) {
+  const seq = SEQUENCES[name];
+  if (!seq) return null;
+  return { frames: seq.frames, width: seq.width, height: seq.height, sampleRegion: seq.sampleRegion };
+}
+
+function sequencePng(name, frame) {
+  const key = `${name}/${frame}`;
+  if (sceneCache.has(key)) return sceneCache.get(key);
+  const seq = SEQUENCES[name];
+  if (!seq || frame < 0 || frame >= seq.frames) return null;
+  const gt = buildSequenceFrame(name, frame);
+  const buf = encodePng(gt.input8, gt.width, gt.height);
+  sceneCache.set(key, buf);
+  return buf;
+}
+
 const server = http.createServer((req, res) => {
   let urlPath;
   try {
@@ -50,6 +67,22 @@ const server = http.createServer((req, res) => {
   if (sceneMatch) {
     const buf = scenePng(sceneMatch[1]);
     if (!buf) { res.writeHead(404); return res.end('unknown scene'); }
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' });
+    return res.end(buf);
+  }
+
+  const seqMetaMatch = urlPath.match(/^\/seq\/([A-Za-z0-9_-]+)\/meta\.json$/);
+  if (seqMetaMatch) {
+    const meta = sequenceMeta(seqMetaMatch[1]);
+    if (!meta) { res.writeHead(404); return res.end('unknown sequence'); }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
+    return res.end(JSON.stringify(meta));
+  }
+
+  const seqMatch = urlPath.match(/^\/seq\/([A-Za-z0-9_-]+)\/(\d+)\.png$/);
+  if (seqMatch) {
+    const buf = sequencePng(seqMatch[1], Number(seqMatch[2]));
+    if (!buf) { res.writeHead(404); return res.end('unknown sequence frame'); }
     res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' });
     return res.end(buf);
   }

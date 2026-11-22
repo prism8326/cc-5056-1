@@ -1,0 +1,273 @@
+{
+  "scenes": {
+    "shadowScreen": {
+      "uniform": {
+        "alphaMae": 0.07872326971238955,
+        "edgeMae": 0.19933221914195443,
+        "screenAlphaLeak": 0.0125397649903721,
+        "opaqueAlphaLeak": 0.21849303123818892,
+        "premulEdgeErr": 0.06826752440724652,
+        "compErrDark": 0.009363190734340053,
+        "compErrLight": 0.0627422944837823,
+        "fieldDevPanel": 0.3590635765127095,
+        "absorbPanel": 0.3261035573839234,
+        "panelAlpha": 0.19468540502209045
+      },
+      "field": {
+        "alphaMae": 0.0723062396741982,
+        "edgeMae": 0.19498716478535374,
+        "screenAlphaLeak": 0.0031153139945648872,
+        "opaqueAlphaLeak": 0.21847677044543326,
+        "premulEdgeErr": 0.058306367817469514,
+        "compErrDark": 0.0077088441105142924,
+        "compErrLight": 0.058789268946504915,
+        "fieldDevPanel": 0.19426502595280615,
+        "absorbPanel": 0.18588286137729612,
+        "panelAlpha": 0.19480676923747198
+      },
+      "regions": {
+        "alphaMae": 0.07222211489808547,
+        "edgeMae": 0.194408238635966,
+        "screenAlphaLeak": 0.0029879297833904973,
+        "opaqueAlphaLeak": 0.2185160505170969,
+        "premulEdgeErr": 0.05866755033035069,
+        "compErrDark": 0.0076941651148364505,
+        "compErrLight": 0.058731091520122757,
+        "fieldDevPanel": 0.1828245620832905,
+        "absorbPanel": 0.17272734460873412,
+        "panelAlpha": 0.19470933387706324
+      },
+      "legacy": {
+        "alphaMae": 0.07224203195860793,
+        "edgeMae": 0.19467030198095328,
+        "screenAlphaLeak": 0.002670606437928369,
+        "opaqueAlphaLeak": 0.21929579620794964,
+        "premulEdgeErr": 0.06484731661880862,
+        "compErrDark": 0.010762187029721591,
+        "compErrLight": 0.05568224651694624,
+        "fieldDevPanel": 0.8562202462937815,
+        "absorbPanel": 0.8806456786881963,
+        "panelAlpha": 0.19239743244104157
+      },
+      "samples": {
+        "none": 0.07222211489808547,
+        "clean": 0.07222188332287596,
+        "badKept": 0.07222188332287596
+      }
+    },
+    "wrinkleScreen": {
+      "uniform": {
+        "alphaMae": 0.0036679184072522107,
+        "edgeMae": 0.0399126423601521,
+        "screenAlphaLeak": 0.0030600295737343705,
+        "opaqueAlphaLeak": 0.00199432635804444,
+        "premulEdgeErr": 0.03589096820846236,
+        "compErrDark": 0.0030304894246154642,
+        "compErrLight": 0.00463652678045793,
+        "fieldDevPanel": 0.09505199506405204,
+        "absorbPanel": 6.054217339386677,
+        "panelAlpha": 0.9974557275302629
+      },
+      "field": {
+        "alphaMae": 0.0034747911158242513,
+        "edgeMae": 0.03953926929354732,
+        "screenAlphaLeak": 0.0028111946711804215,
+        "opaqueAlphaLeak": 0.0020031624949379996,
+        "premulEdgeErr": 0.035537837445347685,
+        "compErrDark": 0.0029885739440584738,
+        "compErrLight": 0.004508012559262335,
+        "fieldDevPanel": 0.09150252938774335,
+        "absorbPanel": 5.868604147831137,
+        "panelAlpha": 0.997435968299529
+      },
+      "regions": {
+        "alphaMae": 0.0032267883460352117,
+        "edgeMae": 0.039576412078415876,
+        "screenAlphaLeak": 0.0024687207756704634,
+        "opaqueAlphaLeak": 0.00201339779171237,
+        "premulEdgeErr": 0.03554600461445474,
+        "compErrDark": 0.0029462514007438587,
+        "compErrLight": 0.004330060322541283,
+        "fieldDevPanel": 0.08858166923296101,
+        "absorbPanel": 5.772872573411305,
+        "panelAlpha": 0.9974307272131604
+      },
+      "legacy": {
+        "alphaMae": 0.0028710202560738576,
+        "edgeMae": 0.03956580346910788,
+        "screenAlphaLeak": 0.0019818531753854098,
+        "opaqueAlphaLeak": 0.0020252160279336053,
+        "premulEdgeErr": 0.03528058380224174,
+        "compErrDark": 0.0028851031280825615,
+        "compErrLight": 0.004077097453031359,
+        "fieldDevPanel": 0.08069307379003943,
+        "absorbPanel": 4.778022622748286,
+        "panelAlpha": 0.9974042701711492
+      }
+    }
+  },
+  "temporal": {
+    "adoptSeries": [
+      1,
+      0.3499999940395355,
+      0.3499999940395355,
+      0.19383469223976135,
+      0,
+      0.3499999940395355,
+      0.3499999940395355,
+      0.3499999940395355
+    ],
+    "stabOn": 0.0008404948125113905,
+    "stabOff": 0.0016892193606154735,
+    "maeOn": 0.0010963257504410682,
+    "maeOff": 0.0009709213120967378
+  },
+  "checks": [
+    {
+      "ok": true,
+      "label": "shadowScreen: field beats fixed-colour key on the screen region",
+      "detail": "leak 0.0031 vs 0.0125, MAE 0.0723 vs 0.0787 (gain 83%)"
+    },
+    {
+      "ok": true,
+      "label": "shadowScreen: field composite error beats fixed-colour key (dark+light)",
+      "detail": "0.0077/0.0588 vs 0.0094/0.0627"
+    },
+    {
+      "ok": true,
+      "label": "shadowScreen: field edge foreground colour not worse than fixed key",
+      "detail": "0.0583 vs 0.0683"
+    },
+    {
+      "ok": true,
+      "label": "shadowScreen: regions beats fixed-colour key on the screen region",
+      "detail": "leak 0.0030 vs 0.0125, MAE 0.0722 vs 0.0787 (gain 84%)"
+    },
+    {
+      "ok": true,
+      "label": "shadowScreen: regions composite error beats fixed-colour key (dark+light)",
+      "detail": "0.0077/0.0587 vs 0.0094/0.0627"
+    },
+    {
+      "ok": true,
+      "label": "shadowScreen: regions edge foreground colour not worse than fixed key",
+      "detail": "0.0587 vs 0.0683"
+    },
+    {
+      "ok": true,
+      "label": "wrinkleScreen: field beats fixed-colour key on the screen region",
+      "detail": "leak 0.0028 vs 0.0031, MAE 0.0035 vs 0.0037 (gain 13%)"
+    },
+    {
+      "ok": true,
+      "label": "wrinkleScreen: field composite error beats fixed-colour key (dark+light)",
+      "detail": "0.0030/0.0045 vs 0.0030/0.0046"
+    },
+    {
+      "ok": true,
+      "label": "wrinkleScreen: field edge foreground colour not worse than fixed key",
+      "detail": "0.0355 vs 0.0359"
+    },
+    {
+      "ok": true,
+      "label": "wrinkleScreen: regions beats fixed-colour key on the screen region",
+      "detail": "leak 0.0025 vs 0.0031, MAE 0.0032 vs 0.0037 (gain 31%)"
+    },
+    {
+      "ok": true,
+      "label": "wrinkleScreen: regions composite error beats fixed-colour key (dark+light)",
+      "detail": "0.0029/0.0043 vs 0.0030/0.0046"
+    },
+    {
+      "ok": true,
+      "label": "wrinkleScreen: regions edge foreground colour not worse than fixed key",
+      "detail": "0.0355 vs 0.0359"
+    },
+    {
+      "ok": true,
+      "label": "shadowScreen: field background model does not absorb the screen-hue panel",
+      "detail": "absorption 19% (field dev 19.4%)"
+    },
+    {
+      "ok": true,
+      "label": "shadowScreen: field keeps as much of the panel as the fixed key",
+      "detail": "panel alpha 0.195 vs fixed 0.195"
+    },
+    {
+      "ok": true,
+      "label": "shadowScreen: regions background model does not absorb the screen-hue panel",
+      "detail": "absorption 17% (field dev 18.3%)"
+    },
+    {
+      "ok": true,
+      "label": "shadowScreen: regions keeps as much of the panel as the fixed key",
+      "detail": "panel alpha 0.195 vs fixed 0.195"
+    },
+    {
+      "ok": true,
+      "label": "samples: contaminated region diagnosed, clean regions pass",
+      "detail": "clean(100%,dev 3%) clean(100%,dev 7%) clean(100%,dev 1%) contaminated(0%,dev 83%)"
+    },
+    {
+      "ok": true,
+      "label": "samples: cross-check against clean evidence separates the bad region",
+      "detail": "dev 83% vs clean 3%/7%/1%"
+    },
+    {
+      "ok": true,
+      "label": "samples: contaminated region is down-weighted before the fit",
+      "detail": "boost=0"
+    },
+    {
+      "ok": true,
+      "label": "samples: deleting a clean sample re-fits only the tiles it supported",
+      "detail": "outside Δ=0, inside Δ=0.0395"
+    },
+    {
+      "ok": true,
+      "label": "samples: deleting the contaminated sample leaves unsupported tiles untouched",
+      "detail": "outside Δ=0, inside Δ=0.0000"
+    },
+    {
+      "ok": true,
+      "label": "samples: clean samples do not hurt and a contaminated one is neutralised",
+      "detail": "none 0.0722 / clean 0.0722 / bad kept 0.0722"
+    },
+    {
+      "ok": true,
+      "label": "freedom: illumination field grid is capped (cannot grow to chase edges)",
+      "detail": "requested 40x40, used 12x10"
+    },
+    {
+      "ok": true,
+      "label": "freedom: field model keeps fine-detail edge quality close to the unified model",
+      "detail": "edge MAE 0.0176 vs unified 0.0174"
+    },
+    {
+      "ok": true,
+      "label": "video: adoption weight collapses when the subject enters the sample region",
+      "detail": "clean frame 0.35 -> crossing 0"
+    },
+    {
+      "ok": true,
+      "label": "video: sample contamination is diagnosed while the subject crosses it",
+      "detail": "f0:clean(1.00) f1:clean(1.00) f2:clean(1.00) f3:clean(0.83) f4:contaminated(0.69) f5:clean(0.98) f6:clean(1.00) f7:clean(1.00)"
+    },
+    {
+      "ok": true,
+      "label": "video: subject crossing the samples is not absorbed next frames",
+      "detail": "mean opaque-subject alpha during crossing 0.999"
+    },
+    {
+      "ok": true,
+      "label": "video: temporal update is more stable than per-frame refits under camera jitter",
+      "detail": "mean |ΔB| on clean screen 0.00084 vs 0.00169"
+    },
+    {
+      "ok": true,
+      "label": "video: temporal update keeps alpha quality (no lag penalty)",
+      "detail": "sequence alpha MAE 0.0011 vs per-frame 0.0010"
+    }
+  ],
+  "failed": 0
+}

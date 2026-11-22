@@ -123,6 +123,21 @@
   }
   #cv.brush { cursor: crosshair; }
   #cv.eyedrop { cursor: cell; }
+  #cv.sampling { cursor: crosshair; }
+
+  .sample-row {
+    display: flex; align-items: center; gap: 7px; padding: 5px 7px;
+    border: 1px solid var(--line); border-radius: 6px; margin-bottom: 5px;
+    font-size: 11.5px; background: var(--panel-2);
+  }
+  .sample-row .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .sample-row.clean .dot { background: var(--accent-2); }
+  .sample-row.contaminated { border-color: #6b3a3a; }
+  .sample-row.contaminated .dot { background: var(--err); }
+  .sample-row.empty .dot { background: var(--muted); }
+  .sample-row .meta { flex: 1; color: var(--muted); font-family: ui-monospace, monospace; font-size: 10.5px; }
+  .sample-row .del { padding: 1px 7px; font-size: 11px; }
+  .sample-empty-note { color: var(--muted); font-size: 11.5px; }
   #dual-wrap canvas { max-width: 43vw; max-height: calc(100vh - 170px); }
 
   #hintbar {
@@ -179,6 +194,38 @@
       </section>
 
       <section class="group">
+        <h2>Backdrop model</h2>
+        <div class="seg" id="modeSeg">
+          <button class="btn small" data-mode="legacy">Unified (original)</button>
+          <button class="btn small" data-mode="uniform">Single re-fit</button>
+          <button class="btn small" data-mode="field">Illumination field</button>
+          <button class="btn small" data-mode="regions">Regional re-fit</button>
+        </div>
+        <div class="hint" id="modeHint"></div>
+        <div class="row" style="margin-top:8px;">
+          <button class="btn small" id="sampleDrawBtn">Draw background sample</button>
+          <button class="btn small" id="undoSampleBtn" disabled>Undo delete</button>
+        </div>
+        <div id="sampleList" style="margin-top:8px;"></div>
+        <div class="hint">Declare reliable background regions (drag on the canvas). The kernel cross-checks each against clean evidence; a contaminated one is down-weighted, and deleting it re-fits only the region it supported.</div>
+      </section>
+
+      <section class="group" id="seqGroup">
+        <h2>Video sequence</h2>
+        <div class="seg" id="seqGrid"></div>
+        <div class="row" id="seqControls" style="margin-top:8px; display:none;">
+          <button class="btn small" id="seqPrev">‹ Prev</button>
+          <button class="btn small" id="seqPlay">Play</button>
+          <button class="btn small" id="seqNext">Next ›</button>
+          <span class="hint" id="seqLabel" style="margin:0;"></span>
+        </div>
+        <div class="row" id="seqOffRow" style="margin-top:6px; display:none;">
+          <button class="btn small" id="seqOff">Back to stills</button>
+        </div>
+        <div class="hint">Frames advance with a temporal update: where the subject covers a declared sample, adoption of the new estimate slows so the subject is not learned as screen.</div>
+      </section>
+
+      <section class="group">
         <h2>View</h2>
         <div class="seg" id="viewSeg">
           <button class="btn small" data-view="input">Input</button>
@@ -186,6 +233,8 @@
           <button class="btn small" data-view="fg">Corrected colour</button>
           <button class="btn small" data-view="comp">Composite</button>
           <button class="btn small" data-view="spill">Spill / residue</button>
+          <button class="btn small" data-view="field">Backdrop field</button>
+          <button class="btn small" data-view="support">Confidence</button>
           <button class="btn small" data-view="dual">Dark ⇄ Light</button>
         </div>
       </section>
@@ -270,7 +319,7 @@
       </div>
     </div>
     <div id="hintbar">
-      <b>Eyedropper</b> samples the screen. <b>Alpha</b> shows transparency alone; <b>Corrected colour</b> shows the despilled foreground over neutral grey; <b>Composite</b> and <b>Dark ⇄ Light</b> expose edge colour residue; <b>Spill / residue</b> shows removable spill left (red), edge residual (green), and spill removed (blue) — genuine green/blue objects stay unlit, because their colour is not spill.
+      <b>Eyedropper</b> samples the screen. <b>Alpha</b> shows transparency alone; <b>Corrected colour</b> shows the despilled foreground over neutral grey; <b>Composite</b> and <b>Dark ⇄ Light</b> expose edge colour residue; <b>Spill / residue</b> shows removable spill left (red), edge residual (green), and spill removed (blue) — genuine green/blue objects stay unlit, because their colour is not spill. <b>Backdrop field</b> shows the actual estimated background; <b>Confidence</b> shows where that estimate is supported by evidence (warm) versus extrapolated (cold).
     </div>
   </main>
 </div>

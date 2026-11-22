@@ -8,8 +8,9 @@
     "start": "node serve.mjs",
     "serve": "node serve.mjs",
     "evaluate": "node tools/evaluate.mjs",
+    "evaluate:screenfield": "node tools/evaluate-screenfield.mjs",
     "test:ui": "node tools/ui-check.mjs",
-    "test": "node tools/evaluate.mjs && node tools/ui-check.mjs"
+    "test": "node tools/evaluate.mjs && node tools/evaluate-screenfield.mjs && node tools/ui-check.mjs"
   },
   "repository": {
     "type": "git",

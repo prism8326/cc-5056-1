@@ -44,6 +44,7 @@ import {
   linearToSrgb8, srgb8ToLinear, clamp01, smoothstep,
   chromaBasis,
 } from './color.js';
+import { fitScreenModel } from './screenfield.js';
 
 export const DEFAULT_PARAMS = {
   keyLinear: null,
@@ -55,6 +56,19 @@ export const DEFAULT_PARAMS = {
   screenQThresh: [0.06, 0.20],
   screenPMin: 0.004,
   screenRatioTol: 0.35,
+  // non-uniform screen modelling ('legacy' keeps the original unified model)
+  screenMode: 'legacy',      // 'legacy' | 'uniform' | 'field' | 'regions'
+  screenSamples: null,       // [{x,y,w,h}] declared reliable background regions
+  fieldGridX: 10,            // low-frequency illumination field grid (bounded DOF)
+  fieldGridY: 8,
+  fieldPrior: 0.15,          // pull of field nodes toward the global mean
+  regionSize: 36,            // tile size for 'regions' mode
+  regionPrior: 0.2,          // blend of each tile toward the shared field
+  sampleBoost: 3,            // confidence multiplier inside clean sample regions
+  contamOnFrac: 0.70,        // below this screen-like fraction a sample is contaminated
+  contamDev: 0.18,           // median deviation from the clean-evidence fit => contaminated
+  temporalRate: 0,           // >0: exponential temporal update for video frames
+  temporalPrev: null,        // screenState from the previous frame
   // alpha / foreground refinement
   refineStrength: 1.0,
   coreDistThreshold: 0.22,
@@ -84,6 +98,15 @@ function prepareParams(p = {}) {
   q.screenSigma = Math.max(1, q.screenSigma | 0);
   q.bilateralRadius = Math.max(1, q.bilateralRadius | 0);
   q.quality = Math.min(4, Math.max(1, q.quality | 0));
+  // The background model's degrees of freedom are deliberately bounded: the
+  // illumination field stays low-frequency and tiles stay coarse, so the
+  // model can follow shading but can never grow enough freedom to swallow
+  // foreground interiors or chase edge detail.
+  q.fieldGridX = Math.min(12, Math.max(2, q.fieldGridX | 0));
+  q.fieldGridY = Math.min(10, Math.max(2, q.fieldGridY | 0));
+  q.regionSize = Math.min(96, Math.max(16, q.regionSize | 0));
+  q.temporalRate = clamp01(q.temporalRate || 0);
+  if (!['legacy', 'uniform', 'field', 'regions'].includes(q.screenMode)) q.screenMode = 'legacy';
   return q;
 }
 
@@ -342,17 +365,49 @@ export function keyImage(input, width, height, userParams) {
   const priorW = confSum > 1e-6 ? wwSum / confSum : 0.5;
   const priorQ = confSum > 1e-6 ? wqSum / confSum : 0;
 
-  const screenW = normConv1(cw, w, h, conf, p.screenSigma, priorW, p.screenPrior).field;
-  const screenP = normConv1(cp, w, h, conf, p.screenSigma, priorP, p.screenPrior).field;
-  const screenQ = normConv1(cq, w, h, conf, p.screenSigma, priorQ, p.screenPrior).field;
-  const modelSupport = normConv1(conf, w, h, conf, p.screenSigma, 0, p.screenPrior).support;
-
   const B = new Float32Array(n * 3);
   const surfW = new Float32Array(n), surfP = new Float32Array(n), surfQ = new Float32Array(n);
+  let modelSupport;
+  let screenDiag = null;
+  let screenState = null;
+  let adoptionMean = null;
+
+  if (p.screenMode === 'legacy') {
+    // Original unified model: confidence-weighted, spatially smoothed screen
+    // colour shared across the frame (normalized convolution).
+    const screenW = normConv1(cw, w, h, conf, p.screenSigma, priorW, p.screenPrior).field;
+    const screenP = normConv1(cp, w, h, conf, p.screenSigma, priorP, p.screenPrior).field;
+    const screenQ = normConv1(cq, w, h, conf, p.screenSigma, priorQ, p.screenPrior).field;
+    modelSupport = normConv1(conf, w, h, conf, p.screenSigma, 0, p.screenPrior).support;
+    for (let i = 0; i < n; i++) {
+      let sw = screenW[i], sp = screenP[i], sq = screenQ[i];
+      if (sp < 1e-4) { sw = priorW; sp = priorP; sq = priorQ; }
+      surfW[i] = sw; surfP[i] = sp; surfQ[i] = sq;
+    }
+  } else {
+    // Non-uniform modelling: fixed colour (uniform), shared low-frequency
+    // illumination field, or partitioned re-estimation — with sample-region
+    // diagnostics and a temporal update for video.
+    const sf = fitScreenModel({
+      w, h, cw, cp, cq, conf,
+      mode: p.screenMode,
+      samples: p.screenSamples,
+      params: p,
+      prevState: p.temporalPrev,
+    });
+    modelSupport = sf.support;
+    screenDiag = sf.diag;
+    screenState = sf.state;
+    adoptionMean = sf.adoptionMean;
+    for (let i = 0; i < n; i++) {
+      let sw = sf.wArr[i], sp = sf.pArr[i], sq = sf.qArr[i];
+      if (sp < 1e-4) { sw = priorW; sp = priorP; sq = priorQ; }
+      surfW[i] = sw; surfP[i] = sp; surfQ[i] = sq;
+    }
+  }
+
   for (let i = 0; i < n; i++) {
-    let sw = screenW[i], sp = screenP[i], sq = screenQ[i];
-    if (sp < 1e-4) { sw = priorW; sp = priorP; sq = priorQ; }
-    surfW[i] = sw; surfP[i] = sp; surfQ[i] = sq;
+    const sw = surfW[i], sp = surfP[i], sq = surfQ[i];
     B[i * 3] = sw * e0[0] + sp * e1[0] + sq * e2[0];
     B[i * 3 + 1] = sw * e0[1] + sp * e1[1] + sq * e2[1];
     B[i * 3 + 2] = sw * e0[2] + sp * e1[2] + sq * e2[2];
@@ -662,6 +717,28 @@ export function keyImage(input, width, height, userParams) {
   if (manualConflicts > 0) warnings.push({ code: 'manual-conflict', text: `${manualConflicts} manual-mask pixels disagree with the local key model; manual priority resolved them.` });
   if (strictLocked > 0) warnings.push({ code: 'adjudicated-screen', text: `${strictLocked} foreground-like pixels matched the screen too exactly to auto-protect; use the protection brush if they are real objects.` });
   if (spillBefore > 0.01 && spillAfter > spillBefore * 0.9) warnings.push({ code: 'spill-residual', text: 'Spill correction left most key-coloured contamination in place; check spill strength / protection ratio.' });
+  if (screenDiag) {
+    let contaminated = 0;
+    for (const s of screenDiag) {
+      if (s.status === 'contaminated') {
+        contaminated++;
+        warnings.push({
+          code: 'sample-contaminated',
+          text: `Background sample #${s.index + 1} looks contaminated: only ${(s.onFrac * 100).toFixed(0)}% of its pixels resemble the screen and it deviates ${(s.deviation * 100).toFixed(0)}% from the estimate supported by the clean samples. It was down-weighted; delete it to re-fit from clean evidence.`,
+        });
+      } else if (s.status === 'empty') {
+        warnings.push({ code: 'sample-empty', text: `Background sample #${s.index + 1} is outside the frame or too small; it was ignored.` });
+      }
+    }
+    if (p.screenMode !== 'uniform') {
+      let lowSup = 0;
+      for (let i = 0; i < n; i++) if (modelSupport[i] < 0.05) lowSup++;
+      if (lowSup / n > 0.3) warnings.push({ code: 'field-low-support', text: 'The background estimate is extrapolated over much of the frame (low confidence range). Add reliable background samples there.' });
+    }
+    if (p.temporalRate > 0 && p.temporalPrev && adoptionMean !== null && adoptionMean < p.temporalRate * 0.35) {
+      warnings.push({ code: 'temporal-adoption-low', text: 'Temporal adoption collapsed this frame — the subject may be covering the background samples. The previous estimate was kept instead of learning the subject as screen.' });
+    }
+  }
 
   const stats = {
     coverage, modelSupportMean: modelSupport.reduce((a, b) => a + b, 0) / n,
@@ -672,6 +749,11 @@ export function keyImage(input, width, height, userParams) {
     spillAfter: visible ? spillAfter / visible : 0,
     keyLinear: [...p.keyLinear],
     basis: { e0, e1, e2, pK: basis.pK, kcLen: basis.kcLen },
+    screenMode: p.screenMode,
+    screenGrid: screenState && screenState.grid ? screenState.grid : null,
+    samples: screenDiag ? screenDiag.map((s) => ({ ...s })) : [],
+    samplesContaminated: screenDiag ? screenDiag.filter((s) => s.status === 'contaminated').length : 0,
+    adoptionMean,
   };
 
   return {
@@ -683,6 +765,7 @@ export function keyImage(input, width, height, userParams) {
     fgModel: fg,
     dField: dInit,
     protectedFlag, conflictFlag,
+    screenState, screenDiag,
     stats, warnings,
   };
 }

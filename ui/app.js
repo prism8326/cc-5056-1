@@ -40,6 +40,13 @@ const state = {
   brush: 'off',
   brushSize: 18,
   eyedrop: false,
+  samples: [],            // declared reliable background regions [{x,y,w,h}]
+  deletedSamples: [],     // undo stack for deleted samples
+  sampleDraw: false,      // sample-drawing tool active
+  dragRect: null,         // in-progress sample rect (image coords)
+  sequence: null,         // { name, frames, frame } when a video sequence is loaded
+  temporalPrev: null,     // screenState handed to the next frame's kernel run
+  playing: false,
   dirty: false,
   busy: false,
   pendingTimer: null,
@@ -63,6 +70,28 @@ const PARAM_SPEC = [
       fmt: (v) => v.toFixed(2), hint: 'Off-axis chroma above this is never screen.' },
     { key: 'screenRatioTol', label: 'Chroma ratio tolerance', min: 0.05, max: 0.8, step: 0.01,
       fmt: (v) => v.toFixed(2), hint: 'How close the p/w ratio must match the key before a shaded pixel counts as screen.' },
+  ]},
+  { group: 'Backdrop field (non-uniform screen)', items: [
+    { key: 'fieldGridX', label: 'Field grid columns', min: 2, max: 12, step: 1,
+      fmt: (v) => `${v | 0}`, hint: 'Low-frequency illumination field resolution (bounded — the model cannot grow extra freedom to chase edges).' },
+    { key: 'fieldGridY', label: 'Field grid rows', min: 2, max: 10, step: 1,
+      fmt: (v) => `${v | 0}`, hint: 'Rows of the shared illumination field.' },
+    { key: 'fieldPrior', label: 'Field smoothing prior', min: 0, max: 0.6, step: 0.01,
+      fmt: (v) => v.toFixed(2), hint: 'Pull of field nodes toward the global mean where evidence is thin.' },
+    { key: 'regionSize', label: 'Region tile size', min: 16, max: 96, step: 2,
+      fmt: (v) => `${v | 0} px`, hint: 'Tile size for regional re-estimation; match it to the local lighting scale.' },
+    { key: 'regionPrior', label: 'Region prior strength', min: 0, max: 0.6, step: 0.01,
+      fmt: (v) => v.toFixed(2), hint: 'How strongly tiles fall back to the shared field where local evidence is missing.' },
+  ]},
+  { group: 'Samples & temporal', items: [
+    { key: 'sampleBoost', label: 'Sample trust', min: 1, max: 6, step: 0.25,
+      fmt: (v) => v.toFixed(2), hint: 'How strongly a clean declared sample anchors the estimate at its location.' },
+    { key: 'contamOnFrac', label: 'Contamination: screen fraction', min: 0.3, max: 0.95, step: 0.01,
+      fmt: (v) => v.toFixed(2), hint: 'A sample with fewer screen-like pixels than this is diagnosed as contaminated.' },
+    { key: 'contamDev', label: 'Contamination: chroma deviation', min: 0.05, max: 0.5, step: 0.01,
+      fmt: (v) => v.toFixed(2), hint: 'A sample whose chroma direction disagrees with the clean-evidence estimate by more than this is contaminated (brightness differences like shadows are not contamination).' },
+    { key: 'temporalRate', label: 'Temporal adoption rate', min: 0, max: 0.9, step: 0.05,
+      fmt: (v) => v.toFixed(2), hint: '0 = re-fit every frame; higher keeps the previous frame\'s background estimate and adopts new evidence at this rate — collapsed automatically where the subject covers a sample.' },
   ]},
   { group: 'Refinement', items: [
     { key: 'refineStrength', label: 'Projection refine', min: 0, max: 1, step: 0.01,
@@ -184,10 +213,15 @@ function recompute() {
       const res = keyImage(state.input8, state.width, state.height, params);
       state.result = res;
       state.computeSeq++;
+      // Chain the background estimate for the next frame (temporal update).
+      if (params.temporalPrev !== null || (params.screenMode !== 'legacy' && params.temporalRate > 0)) {
+        state.temporalPrev = res.screenState || null;
+      }
       const ms = Math.round(performance.now() - t0);
       paintAll(ms);
       renderWarnings(res);
       renderStats(res, ms);
+      renderSampleList(res);
       setStatus(`${state.width}×${state.height} · keyed in ${ms} ms · ${res.stats.visiblePixels} visible px`, false);
     } catch (e) {
       showError(e.message || String(e));
@@ -206,11 +240,173 @@ function buildKernelParams() {
   delete p.screenQThresh0; delete p.screenQThresh1;
   p.keyLinear = state.keyLinear;
   p.manualMask = state.manualMask && state.manualMask.some((v) => v) ? state.manualMask : null;
+  // Non-uniform backdrop modelling: declared samples + temporal chain.
+  p.screenSamples = p.screenMode === 'legacy' ? null
+    : state.samples.map((s) => ({ ...s }));
+  p.temporalPrev = (p.screenMode !== 'legacy' && p.temporalRate > 0) ? state.temporalPrev : null;
   return p;
 }
 // ---------------------------------------------------------------------------
+// Backdrop model mode + background sample regions
+// ---------------------------------------------------------------------------
+const MODE_HINTS = {
+  legacy: 'Original unified background: one smoothed screen colour shared across the frame.',
+  uniform: 'Single re-fit: one background colour, but estimated with the absorption-guarded evidence pipeline.',
+  field: 'Shared low-frequency illumination field: brightness varies on a bounded grid, chroma ratio is shared. Handles falloff, shadows and wrinkles.',
+  regions: 'Regional re-estimation: the frame is partitioned into tiles; each tile re-estimates the background from local evidence with the shared field as prior.',
+};
+
+function setScreenMode(mode) {
+  state.params.screenMode = mode;
+  state.temporalPrev = null;   // state is per-mode; do not chain across modes
+  $$('#modeSeg .btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  $('#modeHint').textContent = MODE_HINTS[mode];
+  markDirty();
+}
+$$('#modeSeg .btn').forEach((b) => b.addEventListener('click', () => setScreenMode(b.dataset.mode)));
+
+function setSampleDraw(on) {
+  state.sampleDraw = on;
+  if (on) { setEyedrop(false); setBrush('off'); }
+  $('#sampleDrawBtn').classList.toggle('active', on);
+  updateBrushCursor();
+}
+$('#sampleDrawBtn').addEventListener('click', () => setSampleDraw(!state.sampleDraw));
+
+function deleteSample(index) {
+  if (index < 0 || index >= state.samples.length) return;
+  state.deletedSamples.push(state.samples[index]);
+  state.samples.splice(index, 1);
+  renderSampleList(state.result);
+  markDirty();
+}
+
+function undoDeleteSample() {
+  const s = state.deletedSamples.pop();
+  if (!s) return;
+  state.samples.push(s);
+  renderSampleList(state.result);
+  markDirty();
+}
+$('#undoSampleBtn').addEventListener('click', undoDeleteSample);
+
+function renderSampleList(res) {
+  const host = $('#sampleList');
+  host.innerHTML = '';
+  $('#undoSampleBtn').disabled = state.deletedSamples.length === 0;
+  if (!state.samples.length) {
+    host.innerHTML = '<div class="sample-empty-note">No background samples declared. The model relies on frame-wide evidence; declare samples where you know the backdrop is clean.</div>';
+    return;
+  }
+  const diag = res && res.screenDiag;
+  for (let i = 0; i < state.samples.length; i++) {
+    const d = diag && diag.find((dd) => dd.index === i);
+    const status = d ? d.status : 'pending';
+    const row = document.createElement('div');
+    row.className = `sample-row ${status}`;
+    const meta = d
+      ? `screen ${(d.onFrac * 100).toFixed(0)}% · dev ${(d.deviation * 100).toFixed(0)}% · ${status}`
+      : 'not yet evaluated';
+    row.innerHTML = `<span class="dot"></span><span>#${i + 1}</span><span class="meta">${meta}</span>`;
+    const del = document.createElement('button');
+    del.className = 'btn small del';
+    del.textContent = 'Delete';
+    del.title = 'Remove this sample — only the region it supported is re-fitted';
+    del.addEventListener('click', () => deleteSample(i));
+    row.appendChild(del);
+    host.appendChild(row);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Video sequences (temporal update)
+// ---------------------------------------------------------------------------
+const SEQUENCES = [
+  ['walk', 'Walk (subject crosses a sample)'],
+];
+
+function buildSequenceButtons() {
+  const host = $('#seqGrid');
+  for (const [id, label] of SEQUENCES) {
+    const b = document.createElement('button');
+    b.className = 'btn small';
+    b.dataset.seq = id;
+    b.textContent = label;
+    b.addEventListener('click', () => loadSequence(id));
+    host.appendChild(b);
+  }
+}
+
+async function loadSequence(name) {
+  stopPlayback();
+  const meta = await (await fetch(`/seq/${name}/meta.json`)).json();
+  state.sequence = { name, frames: meta.frames, frame: 0, sampleRegion: meta.sampleRegion };
+  state.temporalPrev = null;
+  // A sequence is a temporal problem: make sure the temporal update is
+  // actually engaged (field model + adoption rate) so the guard is visible.
+  if (state.params.screenMode === 'legacy') setScreenMode('field');
+  if (state.params.temporalRate === 0) setParamSlider('temporalRate', 0.35);
+  // Seed the declared sample the sequence was designed around, if the user
+  // has not declared any yet — the temporal guard is exercised through it.
+  if (!state.samples.length && meta.sampleRegion) {
+    state.samples = [{ ...meta.sampleRegion }];
+  }
+  $('#seqControls').style.display = '';
+  $('#seqOffRow').style.display = '';
+  $$('#seqGrid .btn').forEach((b) => b.classList.toggle('active', b.dataset.seq === name));
+  await loadSeqFrame(0);
+}
+
+async function loadSeqFrame(t) {
+  const seq = state.sequence;
+  if (!seq) return;
+  seq.frame = Math.max(0, Math.min(seq.frames - 1, t));
+  const keepKey = state.keyLinear;   // one key for the whole shot, not per-frame
+  await loadImageUrl(`/seq/${seq.name}/${seq.frame}.png`, null);
+  state.keyLinear = keepKey;
+  updateKeySwatch();
+  $('#seqLabel').textContent = `frame ${seq.frame + 1}/${seq.frames}`;
+  markDirty(true);
+}
+
+function leaveSequence() {
+  stopPlayback();
+  state.sequence = null;
+  state.temporalPrev = null;
+  $('#seqControls').style.display = 'none';
+  $('#seqOffRow').style.display = 'none';
+  $$('#seqGrid .btn').forEach((b) => b.classList.remove('active'));
+  const still = SCENES.some(([id]) => id === state.name) ? state.name : 'presenter';
+  loadScene(still);
+}
+
+function stopPlayback() {
+  if (state.playing) {
+    clearInterval(state.playing);
+    state.playing = null;
+    $('#seqPlay').textContent = 'Play';
+  }
+}
+
+$('#seqPrev').addEventListener('click', () => state.sequence && loadSeqFrame(state.sequence.frame - 1));
+$('#seqNext').addEventListener('click', () => state.sequence && loadSeqFrame(state.sequence.frame + 1));
+$('#seqOff').addEventListener('click', leaveSequence);
+$('#seqPlay').addEventListener('click', () => {
+  if (!state.sequence) return;
+  if (state.playing) { stopPlayback(); return; }
+  $('#seqPlay').textContent = 'Pause';
+  state.playing = setInterval(() => {
+    if (!state.sequence) return stopPlayback();
+    const next = state.sequence.frame + 1;
+    if (next >= state.sequence.frames) return stopPlayback();
+    loadSeqFrame(next);
+  }, 700);
+});
+
+// ---------------------------------------------------------------------------
 // Painting
 // ---------------------------------------------------------------------------
+
 const paintCache = { input: null };
 
 function paintAll(ms) {
@@ -247,6 +443,12 @@ function paintAll(ms) {
     case 'spill':
       rgba = spillOverlay(res); cap = 'Residue — red = removable spill left, green = edge residual, blue = spill removed';
       break;
+    case 'field':
+      rgba = screenFieldRgba(res); cap = 'Estimated backdrop field (the actual background the kernel subtracts)';
+      break;
+    case 'support':
+      rgba = supportHeatRgba(res); cap = 'Backdrop confidence range — warm = supported by evidence, cold = extrapolated';
+      break;
     case 'comp':
     default: {
       const bg = resolveBg();
@@ -254,6 +456,7 @@ function paintAll(ms) {
         paintCompositeChecker(res);
         state.lastPaint = { kind: 'comp', imageData: null };
         $('#cap').textContent = bg.name;
+        drawSampleOverlay(cv.getContext('2d'));
         updateBrushCursor();
         return;
       }
@@ -266,7 +469,77 @@ function paintAll(ms) {
   ctx.putImageData(img, 0, 0);
   state.lastPaint = { kind: state.view, imageData: img };
   $('#cap').textContent = cap;
+  drawSampleOverlay(ctx);
   updateBrushCursor();
+}
+
+// The estimated background field B(x) the kernel actually subtracts, in sRGB.
+function screenFieldRgba(res) {
+  const { width: w, height: h, screen } = res;
+  const n = w * h;
+  const out = new Uint8ClampedArray(n * 4);
+  for (let i = 0; i < n; i++) {
+    out[i * 4] = Math.round(clamp01(linearToSrgb(screen.r[i * 3])) * 255);
+    out[i * 4 + 1] = Math.round(clamp01(linearToSrgb(screen.r[i * 3 + 1])) * 255);
+    out[i * 4 + 2] = Math.round(clamp01(linearToSrgb(screen.r[i * 3 + 2])) * 255);
+    out[i * 4 + 3] = 255;
+  }
+  return out;
+}
+
+// Confidence range of the background estimate as a heat map.
+const HEAT_STOPS = [
+  [0.0, 32, 34, 74], [0.25, 35, 100, 170], [0.5, 47, 163, 107],
+  [0.75, 224, 195, 65], [1.0, 214, 69, 69],
+];
+function supportHeatRgba(res) {
+  const { width: w, height: h, screenSupport } = res;
+  const n = w * h;
+  const out = new Uint8ClampedArray(n * 4);
+  for (let i = 0; i < n; i++) {
+    const t = clamp01(screenSupport[i]);
+    let a = HEAT_STOPS[0], b = HEAT_STOPS[HEAT_STOPS.length - 1];
+    for (let s = 0; s < HEAT_STOPS.length - 1; s++) {
+      if (t >= HEAT_STOPS[s][0] && t <= HEAT_STOPS[s + 1][0]) { a = HEAT_STOPS[s]; b = HEAT_STOPS[s + 1]; break; }
+    }
+    const f = (t - a[0]) / Math.max(1e-6, b[0] - a[0]);
+    out[i * 4] = Math.round(a[1] + (b[1] - a[1]) * f);
+    out[i * 4 + 1] = Math.round(a[2] + (b[2] - a[2]) * f);
+    out[i * 4 + 2] = Math.round(a[3] + (b[3] - a[3]) * f);
+    out[i * 4 + 3] = 255;
+  }
+  return out;
+}
+
+// Declared background samples drawn over the current view, coloured by the
+// kernel's own diagnosis (green = clean, red = contaminated, grey = empty).
+function drawSampleOverlay(ctx) {
+  if (!ctx) return;
+  const diag = state.result && state.result.screenDiag;
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.font = '11px ui-monospace, monospace';
+  const drawRect = (s, color, label) => {
+    ctx.strokeStyle = color;
+    ctx.setLineDash([5, 3]);
+    ctx.strokeRect(s.x + 0.5, s.y + 0.5, s.w, s.h);
+    ctx.setLineDash([]);
+    if (label) {
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = '#000a';
+      ctx.fillRect(s.x + 2, s.y + 2, tw + 8, 15);
+      ctx.fillStyle = color;
+      ctx.fillText(label, s.x + 6, s.y + 13);
+    }
+  };
+  for (let i = 0; i < state.samples.length; i++) {
+    const s = state.samples[i];
+    const d = diag && diag.find((dd) => dd.index === i);
+    const color = !d ? '#98a0ad' : d.status === 'clean' ? '#7ee0a0' : d.status === 'contaminated' ? '#ff6b6b' : '#98a0ad';
+    drawRect(s, color, `#${i + 1} ${d ? d.status : ''}`);
+  }
+  if (state.dragRect) drawRect(state.dragRect, '#57b6ff', 'new sample');
+  ctx.restore();
 }
 
 function putImage(cv, rgba, w, h) {
@@ -343,6 +616,10 @@ const WARN_PARAM_HINT = {
   'manual-conflict': ['brush', 'protect'],
   'adjudicated-screen': ['brush', 'protect'],
   'spill-residual': ['param', 'spillStrength'],
+  'sample-contaminated': ['samples', null],
+  'sample-empty': ['samples', null],
+  'field-low-support': ['samples', null],
+  'temporal-adoption-low': ['param', 'temporalRate'],
 };
 
 function renderWarnings(res) {
@@ -369,6 +646,11 @@ function actOnWarning(code) {
   if (!hint) return;
   if (hint[0] === 'eyedrop') { setEyedrop(true); return; }
   if (hint[0] === 'brush') { setBrush(hint[1]); return; }
+  if (hint[0] === 'samples') {
+    $('#sampleList').scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setSampleDraw(true);
+    return;
+  }
   if (hint[0] === 'param') { flashParam(hint[1]); }
 }
 
@@ -386,6 +668,8 @@ function renderStats(res, ms) {
     ['screen support', (s.modelSupportMean * 100).toFixed(1) + '%'],
     ['coverage', (s.coverage * 100).toFixed(1) + '%'],
     ['mean alpha', s.meanAlpha.toFixed(3)],
+    ['backdrop model', s.screenMode + (s.screenGrid ? ` ${s.screenGrid[0]}×${s.screenGrid[1]}` : '')],
+    ['samples clean/contam.', `${s.samples.filter((d) => d.status === 'clean').length} / ${s.samplesContaminated}`],
     ['auto-protected px', String(s.autoProtected)],
     ['strict screen-locked', String(s.strictLocked)],
     ['brush applied px', String(s.manualApplied)],
@@ -394,6 +678,9 @@ function renderStats(res, ms) {
     ['edge residual', s.edgeResidualMean.toFixed(4)],
     ['kernel time', `${ms} ms`],
   ];
+  if (s.adoptionMean !== null && s.adoptionMean !== undefined) {
+    rows.splice(5, 0, ['temporal adoption', s.adoptionMean.toFixed(2)]);
+  }
   $('#stats').innerHTML = rows.map(([k, v]) => `<span>${k}</span><b>${v}</b>`).join('');
 }
 
@@ -408,6 +695,7 @@ function updateKeySwatch() {
 
 function setEyedrop(on) {
   state.eyedrop = on;
+  if (on) setSampleDraw(false);
   $('#eyedropBtn').classList.toggle('active', on);
   updateBrushCursor();
 }
@@ -430,11 +718,18 @@ function canvasPixel(ev, canvas) {
 }
 function updateBrushCursor() {
   cv.classList.toggle('eyedrop', state.eyedrop);
-  cv.classList.toggle('brush', !state.eyedrop && state.brush !== 'off');
+  cv.classList.toggle('brush', !state.eyedrop && !state.sampleDraw && state.brush !== 'off');
+  cv.classList.toggle('sampling', state.sampleDraw);
 }
 
 cv.addEventListener('pointerdown', (ev) => {
   if (!state.input8) return;
+  if (state.sampleDraw) {
+    const { x, y } = canvasPixel(ev, cv);
+    state.dragRect = { x, y, w: 0, h: 0 };
+    cv.setPointerCapture(ev.pointerId);
+    return;
+  }
   if (state.eyedrop) {
     const { x, y } = canvasPixel(ev, cv);
     // Sample from the current painted image if it is the input; otherwise use
@@ -454,9 +749,34 @@ cv.addEventListener('pointerdown', (ev) => {
   }
 });
 cv.addEventListener('pointermove', (ev) => {
+  if (state.dragRect) {
+    const { x, y } = canvasPixel(ev, cv);
+    const r = state.dragRect;
+    r.w = x - r.x; r.h = y - r.y;
+    paintAll(0);   // repaints current view + in-progress rect
+    return;
+  }
   if (cv._brushing) paintBrush(ev);
 });
 cv.addEventListener('pointerup', () => {
+  if (state.dragRect) {
+    let { x, y, w, h } = state.dragRect;
+    state.dragRect = null;
+    if (w < 0) { x += w; w = -w; }
+    if (h < 0) { y += h; h = -h; }
+    if (w >= 4 && h >= 4) {
+      state.samples.push({ x, y, w, h });
+      state.deletedSamples.length = 0;  // a new declaration invalidates the undo stack
+      // Declaring a sample only makes sense with a non-uniform model —
+      // switch out of the legacy unified mode so the sample takes effect.
+      if (state.params.screenMode === 'legacy') setScreenMode('field');
+      renderSampleList(state.result);
+      markDirty();
+    } else {
+      paintAll(0);
+    }
+    return;
+  }
   if (cv._brushing) { cv._brushing = false; markDirty(); }
 });
 
@@ -509,6 +829,7 @@ $('#clearMaskBtn').addEventListener('click', () => {
 // ---------------------------------------------------------------------------
 function setBrush(v) {
   state.brush = v;
+  if (v !== 'off') setSampleDraw(false);
   $$('#brushSeg .btn').forEach((b) => b.classList.toggle('active', b.dataset.brush === v));
   updateBrushCursor();
 }
@@ -544,6 +865,18 @@ $('#recomputeBtn').addEventListener('click', () => markDirty(true));
 // ---------------------------------------------------------------------------
 // Parameter panel
 // ---------------------------------------------------------------------------
+// Set a slider-backed parameter from code (sequence auto-setup, tests) and
+// reflect it in the panel.
+function setParamSlider(key, value) {
+  state.params[key] = value;
+  const wrap = document.querySelector(`[data-param="${key}"]`);
+  if (wrap) {
+    const input = wrap.querySelector('input');
+    input.value = String(value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+
 function buildParamPanel() {
   const host = $('#paramGroups');
   for (const g of PARAM_SPEC) {
@@ -655,10 +988,13 @@ $('#exportComp').addEventListener('click', () => {
 // ---------------------------------------------------------------------------
 function boot() {
   buildSceneButtons();
+  buildSequenceButtons();
   buildParamPanel();
   setView('comp');
   setBg('dark');
   setBrush('off');
+  setScreenMode(state.params.screenMode || 'legacy');
+  renderSampleList(null);
   loadScene('presenter').then(recompute).catch((e) => {
     showError('Could not load the demo scene. Run `node serve.mjs` and open http://localhost:8080/ — ' + e.message);
     setStatus('no image', false);
@@ -667,4 +1003,8 @@ function boot() {
 boot();
 
 // Expose a tiny hook for automated UI verification (no effect on normal use).
-window.__keyStudio = { state, recompute, loadScene, setView, setBg, setBrush };
+window.__keyStudio = {
+  state, recompute, loadScene, setView, setBg, setBrush,
+  setScreenMode, setSampleDraw, deleteSample, undoDeleteSample,
+  loadSequence, loadSeqFrame, leaveSequence,
+};
