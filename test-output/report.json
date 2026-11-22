@@ -1,0 +1,297 @@
+{
+  "scenes": {
+    "presenter": {
+      "ms": 1242,
+      "oracleEdgeAlpha": 0.07787032396020742,
+      "alphaMae": 0.0015854390127249104,
+      "edgeMae": 0.09804066109228346,
+      "edgeAlphaOverOracle": 0.02017033713207604,
+      "opaqueAlphaLeak": 0.001697515315159697,
+      "screenAlphaLeak": 0.0006866080960943094,
+      "premulEdgeErr": 0.05304858836010329,
+      "compErrDark": 0.002920777835086573,
+      "compErrLight": 0.0037103930846346194,
+      "spillBefore": 0.024112186187559965,
+      "spillAfter": 0.0066972405827853436,
+      "hadSpill": true,
+      "greenErr": 0.03452092092985812,
+      "blueErr": null,
+      "thinTotal": 368,
+      "thinLost": 4,
+      "warnings": [
+        "adjudicated-screen",
+        "spill-residual"
+      ],
+      "stats": {
+        "coverage": 0.7150736481146198,
+        "autoProtected": 10,
+        "strictLocked": 108584,
+        "edgeResidualMean": 0.014379004440005465
+      }
+    },
+    "blueProduct": {
+      "ms": 1066,
+      "oracleEdgeAlpha": 0.026906453481626832,
+      "alphaMae": 0.0005306814434623919,
+      "edgeMae": 0.041559891458611234,
+      "edgeAlphaOverOracle": 0.014653437976984401,
+      "opaqueAlphaLeak": 0.0007329778596545076,
+      "screenAlphaLeak": 0.00007032592791772253,
+      "premulEdgeErr": 0.0412866785838355,
+      "compErrDark": 0.0044593845730180005,
+      "compErrLight": 0.004582080682758823,
+      "spillBefore": 0,
+      "spillAfter": 0,
+      "hadSpill": true,
+      "greenErr": null,
+      "blueErr": 0.03240279451453653,
+      "thinTotal": 423,
+      "thinLost": 0,
+      "warnings": [
+        "adjudicated-screen",
+        "spill-residual"
+      ],
+      "stats": {
+        "coverage": 0.7358464503237132,
+        "autoProtected": 0,
+        "strictLocked": 123351,
+        "edgeResidualMean": 0.020767436359405117
+      }
+    },
+    "fineDetail": {
+      "ms": 1535,
+      "oracleEdgeAlpha": 0.01313183169711544,
+      "alphaMae": 0.0008700592433766967,
+      "edgeMae": 0.01738230892806314,
+      "edgeAlphaOverOracle": 0.004250477230947699,
+      "opaqueAlphaLeak": 0.0010450952792896689,
+      "screenAlphaLeak": 0.0001954098162752028,
+      "premulEdgeErr": 0.03017673950130918,
+      "compErrDark": 0.0018354829837499255,
+      "compErrLight": 0.002032854877543913,
+      "spillBefore": 0.004435354875707553,
+      "spillAfter": 0.0029295142198327876,
+      "greenErr": null,
+      "blueErr": null,
+      "thinTotal": 2524,
+      "thinLost": 3,
+      "warnings": [
+        "adjudicated-screen"
+      ],
+      "stats": {
+        "coverage": 0.7689111446838726,
+        "autoProtected": 7,
+        "strictLocked": 115596,
+        "edgeResidualMean": 0.0049564525781144375
+      }
+    },
+    "despill": {
+      "ms": 1034,
+      "oracleEdgeAlpha": 0.034206670856065255,
+      "alphaMae": 0.0009744371919924999,
+      "edgeMae": 0.048577930567365285,
+      "edgeAlphaOverOracle": 0.01437125971130003,
+      "opaqueAlphaLeak": 0.0011443011384388085,
+      "screenAlphaLeak": 0.00018600350661307274,
+      "premulEdgeErr": 0.0340893748340352,
+      "compErrDark": 0.0059111627044242014,
+      "compErrLight": 0.006216356542658174,
+      "spillBefore": 0.0407980084305834,
+      "spillAfter": 0.009787705759815314,
+      "hadSpill": true,
+      "greenErr": 0.044998554757374604,
+      "blueErr": null,
+      "thinTotal": 729,
+      "thinLost": 5,
+      "warnings": [
+        "low-screen-model",
+        "adjudicated-screen",
+        "spill-residual"
+      ],
+      "stats": {
+        "coverage": 0.5699129278750158,
+        "autoProtected": 2,
+        "strictLocked": 88008,
+        "edgeResidualMean": 0.014722775460752452
+      }
+    }
+  },
+  "checks": [
+    {
+      "ok": true,
+      "label": "presenter: alpha MAE < 0.012",
+      "detail": "0.0016"
+    },
+    {
+      "ok": true,
+      "label": "presenter: edge alpha near JPEG oracle",
+      "detail": "0.098 vs oracle 0.078"
+    },
+    {
+      "ok": true,
+      "label": "presenter: opaque alpha preserved",
+      "detail": "0.0017"
+    },
+    {
+      "ok": true,
+      "label": "presenter: screen keyed out",
+      "detail": "0.0007"
+    },
+    {
+      "ok": true,
+      "label": "presenter: premultiplied edge colour",
+      "detail": "0.0530"
+    },
+    {
+      "ok": true,
+      "label": "presenter: composite on DARK bg",
+      "detail": "0.0029"
+    },
+    {
+      "ok": true,
+      "label": "presenter: composite on LIGHT bg",
+      "detail": "0.0037"
+    },
+    {
+      "ok": true,
+      "label": "presenter: green object hue preserved",
+      "detail": "0.0345"
+    },
+    {
+      "ok": true,
+      "label": "presenter: despill removes separable contamination",
+      "detail": "0.0241 -> 0.0067 (neutral px)"
+    },
+    {
+      "ok": true,
+      "label": "blueProduct: alpha MAE < 0.012",
+      "detail": "0.0005"
+    },
+    {
+      "ok": true,
+      "label": "blueProduct: edge alpha near JPEG oracle",
+      "detail": "0.042 vs oracle 0.027"
+    },
+    {
+      "ok": true,
+      "label": "blueProduct: opaque alpha preserved",
+      "detail": "0.0007"
+    },
+    {
+      "ok": true,
+      "label": "blueProduct: screen keyed out",
+      "detail": "0.0001"
+    },
+    {
+      "ok": true,
+      "label": "blueProduct: premultiplied edge colour",
+      "detail": "0.0413"
+    },
+    {
+      "ok": true,
+      "label": "blueProduct: composite on DARK bg",
+      "detail": "0.0045"
+    },
+    {
+      "ok": true,
+      "label": "blueProduct: composite on LIGHT bg",
+      "detail": "0.0046"
+    },
+    {
+      "ok": true,
+      "label": "blueProduct: blue object hue preserved",
+      "detail": "0.0324"
+    },
+    {
+      "ok": true,
+      "label": "blueProduct: despill N/A — all visible colour is subject hue (inseparable)",
+      "detail": "0 neutral px"
+    },
+    {
+      "ok": true,
+      "label": "fineDetail: alpha MAE < 0.012",
+      "detail": "0.0009"
+    },
+    {
+      "ok": true,
+      "label": "fineDetail: edge alpha near JPEG oracle",
+      "detail": "0.017 vs oracle 0.013"
+    },
+    {
+      "ok": true,
+      "label": "fineDetail: opaque alpha preserved",
+      "detail": "0.0010"
+    },
+    {
+      "ok": true,
+      "label": "fineDetail: screen keyed out",
+      "detail": "0.0002"
+    },
+    {
+      "ok": true,
+      "label": "fineDetail: premultiplied edge colour",
+      "detail": "0.0302"
+    },
+    {
+      "ok": true,
+      "label": "fineDetail: composite on DARK bg",
+      "detail": "0.0018"
+    },
+    {
+      "ok": true,
+      "label": "fineDetail: composite on LIGHT bg",
+      "detail": "0.0020"
+    },
+    {
+      "ok": true,
+      "label": "fineDetail: thin detail preserved",
+      "detail": "3/2524"
+    },
+    {
+      "ok": true,
+      "label": "despill: alpha MAE < 0.012",
+      "detail": "0.0010"
+    },
+    {
+      "ok": true,
+      "label": "despill: edge alpha near JPEG oracle",
+      "detail": "0.049 vs oracle 0.034"
+    },
+    {
+      "ok": true,
+      "label": "despill: opaque alpha preserved",
+      "detail": "0.0011"
+    },
+    {
+      "ok": true,
+      "label": "despill: screen keyed out",
+      "detail": "0.0002"
+    },
+    {
+      "ok": true,
+      "label": "despill: premultiplied edge colour",
+      "detail": "0.0341"
+    },
+    {
+      "ok": true,
+      "label": "despill: composite on DARK bg",
+      "detail": "0.0059"
+    },
+    {
+      "ok": true,
+      "label": "despill: composite on LIGHT bg",
+      "detail": "0.0062"
+    },
+    {
+      "ok": true,
+      "label": "despill: green object hue preserved",
+      "detail": "0.0450"
+    },
+    {
+      "ok": true,
+      "label": "despill: despill removes separable contamination",
+      "detail": "0.0408 -> 0.0098 (neutral px)"
+    }
+  ],
+  "failed": 0
+}

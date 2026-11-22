@@ -1,0 +1,30 @@
+{
+  "name": "workspace",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node serve.mjs",
+    "serve": "node serve.mjs",
+    "evaluate": "node tools/evaluate.mjs",
+    "test:ui": "node tools/ui-check.mjs",
+    "test": "node tools/evaluate.mjs && node tools/ui-check.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/prism8326/cc-5056-1.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/prism8326/cc-5056-1/issues"
+  },
+  "homepage": "https://github.com/prism8326/cc-5056-1#readme",
+  "dependencies": {
+    "jpeg-js": "^0.4.4",
+    "playwright": "^1.65.1",
+    "pngjs": "^7.0.0"
+  }
+}
